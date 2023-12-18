@@ -15,9 +15,6 @@ package_data = {
     ]
 }
 
-# Cleaner to read in the contents rather than copy them over.
-readme_contents = open("${GTSAM_SOURCE_DIR}/README.md").read()
-
 setup(
     name='gtsam',
     description='Georgia Tech Smoothing And Mapping library',
@@ -28,7 +25,6 @@ setup(
     license='Simplified BSD license',
     keywords='slam sam robotics localization mapping optimization',
     long_description_content_type='text/markdown',
-    long_description=readme_contents,
     # https://pypi.org/pypi?%3Aaction=list_classifiers
     classifiers=[
         'Development Status :: 5 - Production/Stable',
@@ -45,6 +41,7 @@ setup(
     include_package_data=True,
     package_data=package_data,
     test_suite="gtsam.tests",
-    install_requires=open("${GTSAM_SOURCE_DIR}/python/requirements.txt").readlines(),
+    # install_requires=open("${GTSAM_SOURCE_DIR}/python/requirements.txt").readlines(),
+    install_requires=[ "numpy>=1.11.0" ],
     zip_safe=False,
 )
