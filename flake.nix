@@ -52,8 +52,6 @@
             pybind11
           ]);
 
-          # outputs = [ "out" "python" ];
-
           nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.patchelf ];
 
           postInstall = ''
