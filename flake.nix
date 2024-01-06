@@ -28,6 +28,11 @@
             boost
             # TODO(mkagie) why is this not registering with cmake
             tbb
+            eigen
+          ];
+
+          cmakeFlags = [
+            "-DGTSAM_USE_SYSTEM_EIGEN=ON"
           ];
         };
 
