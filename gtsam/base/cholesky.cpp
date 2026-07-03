@@ -20,6 +20,8 @@
 #include <gtsam/base/cholesky.h>
 #include <gtsam/base/timing.h>
 
+#include <Eigen/Cholesky>
+#include <cassert>
 #include <cmath>
 
 using namespace std;

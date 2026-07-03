@@ -17,8 +17,9 @@
  */
 
 #include <SymEigsSolver.h>
-#include <cmath>
+#include <gtsam/linear/AcceleratedPowerMethod.h>
 #include <gtsam/linear/PCGSolver.h>
+#include <gtsam/linear/PowerMethod.h>
 #include <gtsam/linear/SubgraphPreconditioner.h>
 #include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
 #include <gtsam/nonlinear/NonlinearEquality.h>
@@ -31,9 +32,8 @@
 
 #include <Eigen/Eigenvalues>
 #include <algorithm>
-#include <complex>
-#include <iostream>
-#include <map>
+#include <cassert>
+#include <cmath>
 #include <random>
 #include <set>
 #include <vector>
@@ -41,7 +41,7 @@
 namespace gtsam {
 
 // In Wrappers we have no access to this so have a default ready
-static std::mt19937 kRandomNumberGenerator(42);
+static std::mt19937 kPRNG(42);
 
 using Sparse = Eigen::SparseMatrix<double>;
 
@@ -67,20 +67,15 @@ ShonanAveragingParameters<d>::ShonanAveragingParameters(
   builderParameters.augmentationWeight = SubgraphBuilderParameters::SKELETON;
   builderParameters.augmentationFactor = 0.0;
 
-  auto pcg = std::make_shared<PCGSolverParameters>();
-
   // Choose optimization method
   if (method == "SUBGRAPH") {
     lm.iterativeParams =
         std::make_shared<SubgraphSolverParameters>(builderParameters);
   } else if (method == "SGPC") {
-    pcg->preconditioner_ =
-        std::make_shared<SubgraphPreconditionerParameters>(builderParameters);
-    lm.iterativeParams = pcg;
+    lm.iterativeParams = std::make_shared<PCGSolverParameters>(
+        std::make_shared<SubgraphPreconditionerParameters>(builderParameters));
   } else if (method == "JACOBI") {
-    pcg->preconditioner_ =
-        std::make_shared<BlockJacobiPreconditionerParameters>();
-    lm.iterativeParams = pcg;
+    lm.iterativeParams = std::make_shared<PCGSolverParameters>(std::make_shared<BlockJacobiPreconditionerParameters>());
   } else if (method == "QR") {
     lm.setLinearSolverType("MULTIFRONTAL_QR");
   } else if (method == "CHOLESKY") {
@@ -102,7 +97,7 @@ template <size_t d>
 static size_t NrUnknowns(
     const typename ShonanAveraging<d>::Measurements &measurements) {
   Key maxKey = 0;
-  std::set<Key> keys;
+  KeySet keys;
   for (const auto &measurement : measurements) {
     for (const Key &key : measurement.keys()) {
       maxKey = std::max(key, maxKey);
@@ -574,6 +569,8 @@ static bool PowerMinimumEigenValue(
  * nontrivial function, perform_op(x,y), that computes and returns the product
  * y = (A + sigma*I) x */
 struct MatrixProdFunctor {
+  using Scalar = double;
+
   // Const reference to an externally-held matrix whose minimum-eigenvalue we
   // want to compute
   const Sparse &A_;
@@ -634,13 +631,13 @@ static bool SparseMinimumEigenValue(
     Eigen::Index numLanczosVectors = 20) {
   // a. Estimate the largest-magnitude eigenvalue of this matrix using Lanczos
   MatrixProdFunctor lmOperator(A);
-  Spectra::SymEigsSolver<double, Spectra::SELECT_EIGENVALUE::LARGEST_MAGN,
-                         MatrixProdFunctor>
-      lmEigenValueSolver(&lmOperator, 1, std::min(numLanczosVectors, A.rows()));
+  Spectra::SymEigsSolver<MatrixProdFunctor> lmEigenValueSolver(
+      lmOperator, 1, std::min(numLanczosVectors, A.rows()));
   lmEigenValueSolver.init();
 
-  const int lmConverged = lmEigenValueSolver.compute(
-      maxIterations, 1e-4, Spectra::SELECT_EIGENVALUE::LARGEST_MAGN);
+  const int lmConverged =
+      lmEigenValueSolver.compute(Spectra::SortRule::LargestMagn, maxIterations,
+                                 1e-4, Spectra::SortRule::LargestMagn);
 
   // Check convergence and bail out if necessary
   if (lmConverged != 1) return false;
@@ -668,10 +665,8 @@ static bool SparseMinimumEigenValue(
 
   MatrixProdFunctor minShiftedOperator(A, -2 * lmEigenValue);
 
-  Spectra::SymEigsSolver<double, Spectra::SELECT_EIGENVALUE::LARGEST_MAGN,
-                         MatrixProdFunctor>
-      minEigenValueSolver(&minShiftedOperator, 1,
-                          std::min(numLanczosVectors, A.rows()));
+  Spectra::SymEigsSolver<MatrixProdFunctor> minEigenValueSolver(
+      minShiftedOperator, 1, std::min(numLanczosVectors, A.rows()));
 
   // If S is a critical point of F, then S^T is also in the null space of S -
   // Lambda(S) (cf. Lemma 6 of the tech report), and therefore its rows are
@@ -699,8 +694,9 @@ static bool SparseMinimumEigenValue(
   // order to be able to estimate the smallest eigenvalue within an *absolute*
   // tolerance of 'minEigenvalueNonnegativityTolerance'
   const int minConverged = minEigenValueSolver.compute(
-      maxIterations, minEigenvalueNonnegativityTolerance / lmEigenValue,
-      Spectra::SELECT_EIGENVALUE::LARGEST_MAGN);
+      Spectra::SortRule::LargestMagn, maxIterations,
+      minEigenvalueNonnegativityTolerance / lmEigenValue,
+      Spectra::SortRule::LargestMagn);
 
   if (minConverged != 1) return false;
 
@@ -830,8 +826,8 @@ Values ShonanAveraging<d>::initializeWithDescent(
   double alphaMin = 1e-2;
   double alpha =
       std::max(1024 * alphaMin, 10 * gradienTolerance / fabs(minEigenValue));
-  vector<double> alphas;
-  vector<double> fvals;
+  std::vector<double> alphas;
+  std::vector<double> fvals;
   // line search
   while ((alpha >= alphaMin)) {
     Values Qplus = LiftwithDescent(p, values, alpha * minEigenVector);
@@ -872,7 +868,7 @@ Values ShonanAveraging<d>::initializeRandomly(std::mt19937 &rng) const {
 /* ************************************************************************* */
 template <size_t d>
 Values ShonanAveraging<d>::initializeRandomly() const {
-  return initializeRandomly(kRandomNumberGenerator);
+  return initializeRandomly(kPRNG);
 }
 
 /* ************************************************************************* */
@@ -886,7 +882,7 @@ Values ShonanAveraging<d>::initializeRandomlyAt(size_t p,
 /* ************************************************************************* */
 template <size_t d>
 Values ShonanAveraging<d>::initializeRandomlyAt(size_t p) const {
-  return initializeRandomlyAt(p, kRandomNumberGenerator);
+  return initializeRandomlyAt(p, kPRNG);
 }
 
 /* ************************************************************************* */
@@ -940,7 +936,7 @@ ShonanAveraging2::ShonanAveraging2(const Measurements &measurements,
     : ShonanAveraging<2>(maybeRobust(measurements, parameters.getUseHuber()),
                          parameters) {}
 
-ShonanAveraging2::ShonanAveraging2(string g2oFile, const Parameters &parameters)
+ShonanAveraging2::ShonanAveraging2(std::string g2oFile, const Parameters &parameters)
     : ShonanAveraging<2>(maybeRobust(parseMeasurements<Rot2>(g2oFile),
                                      parameters.getUseHuber()),
                          parameters) {}
@@ -986,7 +982,7 @@ ShonanAveraging3::ShonanAveraging3(const Measurements &measurements,
     : ShonanAveraging<3>(maybeRobust(measurements, parameters.getUseHuber()),
                          parameters) {}
 
-ShonanAveraging3::ShonanAveraging3(string g2oFile, const Parameters &parameters)
+ShonanAveraging3::ShonanAveraging3(std::string g2oFile, const Parameters &parameters)
     : ShonanAveraging<3>(maybeRobust(parseMeasurements<Rot3>(g2oFile),
                                      parameters.getUseHuber()),
                          parameters) {}

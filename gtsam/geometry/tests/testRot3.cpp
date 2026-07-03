@@ -17,20 +17,25 @@
  * @author  Varun Agrawal
  */
 
+#include <CppUnitLite/TestHarness.h>
+#include <gtsam/base/MatrixConstants.h>
+#include <gtsam/base/Testable.h>
+#include <gtsam/base/VectorConstants.h>
+#include <gtsam/base/lieProxies.h>
+#include <gtsam/base/numericalDerivative.h>
+#include <gtsam/base/testLie.h>
 #include <gtsam/geometry/Point3.h>
 #include <gtsam/geometry/Rot3.h>
-#include <gtsam/base/testLie.h>
-#include <gtsam/base/Testable.h>
-#include <gtsam/base/numericalDerivative.h>
-#include <gtsam/base/lieProxies.h>
 
-#include <CppUnitLite/TestHarness.h>
+#include <array>
+#include <iomanip>
+#include <sstream>
 
 using namespace std;
 using namespace gtsam;
 
 GTSAM_CONCEPT_TESTABLE_INST(Rot3)
-GTSAM_CONCEPT_LIE_INST(Rot3)
+GTSAM_CONCEPT_MATRIX_LIE_GROUP_INST(Rot3)
 
 static Rot3 R = Rot3::Rodrigues(0.1, 0.4, 0.2);
 static Point3 P(0.2, 0.7, -2.0);
@@ -40,7 +45,7 @@ static double error = 1e-9, epsilon = 0.001;
 TEST(Rot3 , Concept) {
   GTSAM_CONCEPT_ASSERT(IsGroup<Rot3 >);
   GTSAM_CONCEPT_ASSERT(IsManifold<Rot3 >);
-  GTSAM_CONCEPT_ASSERT(IsLieGroup<Rot3 >);
+  GTSAM_CONCEPT_ASSERT(IsMatrixLieGroup<Rot3 >);
 }
 
 /* ************************************************************************* */
@@ -184,11 +189,64 @@ TEST( Rot3, retract)
 {
   Vector v = Z_3x1;
   CHECK(assert_equal(R, R.retract(v)));
+}
 
-//  // test Canonical coordinates
-//  Canonical<Rot3> chart;
-//  Vector v2 = chart.local(R);
-//  CHECK(assert_equal(R, chart.retract(v2)));
+/* ************************************************************************* */
+namespace {
+
+struct RetractNormalizationMetrics {
+  double quaternionNormError;
+  double orthogonalityError;
+  double determinantError;
+};
+
+RetractNormalizationMetrics measureRetractNormalization(
+    const Rot3& base, const Vector3& omega) {
+  const Rot3 retracted = base.retract(omega);
+  const Matrix3 matrix = retracted.matrix();
+  return {std::abs(retracted.toQuaternion().norm() - 1.0),
+          (matrix.transpose() * matrix - I_3x3).norm(),
+          std::abs(matrix.determinant() - 1.0)};
+}
+
+}  // namespace
+
+TEST(Rot3, retractNormalizationAcrossMagnitudes) {
+  const Vector3 direction = Vector3(1.0, -2.0, 3.0).normalized();
+  const std::array<Rot3, 2> bases = {
+      Rot3(),
+      Rot3::RzRyRx(0.3, -0.2, 0.5),
+  };
+  const std::array<double, 17> magnitudes = {
+      0.0, 1e-16, 1e-14, 1e-12, 1e-10, 1e-8, 1e-6, 1e-4, 1e-2,
+      1.0, 1e2,   1e4,   1e6,   1e8,   1e10, 1e12, 1e14,
+  };
+  const double quaternionNormTolerance = 1e-12;
+  const double orthogonalityTolerance = 1e-10;
+  const double determinantTolerance = 1e-10;
+
+  for (size_t baseIndex = 0; baseIndex < bases.size(); ++baseIndex) {
+    for (const double magnitude : magnitudes) {
+      const auto metrics =
+          measureRetractNormalization(bases[baseIndex], direction * magnitude);
+      const bool quaternionOk =
+          metrics.quaternionNormError <= quaternionNormTolerance;
+      const bool orthogonalityOk =
+          metrics.orthogonalityError <= orthogonalityTolerance;
+      const bool determinantOk =
+          metrics.determinantError <= determinantTolerance;
+      if (quaternionOk && orthogonalityOk && determinantOk) continue;
+
+      std::ostringstream os;
+      os << std::scientific << std::setprecision(3)
+         << "Retract normalization broke down for base[" << baseIndex
+         << "] at |omega|=" << magnitude
+         << " with quaternion norm error=" << metrics.quaternionNormError
+         << ", orthogonality error=" << metrics.orthogonalityError
+         << ", determinant error=" << metrics.determinantError;
+      FAIL(os.str());
+    }
+  }
 }
 
 /* ************************************************************************* */
@@ -322,6 +380,34 @@ TEST(Rot3, manifold_expmap)
   Rot3 R5 = Rot3::Expmap (5 * d);
   CHECK(assert_equal(R5,R2*R3));
   CHECK(assert_equal(R5,R3*R2));
+}
+
+/* ************************************************************************* */
+TEST(Rot3, HatAndVee) {
+  // Create a few test vectors
+  Vector3 v1(1, 2, 3);
+  Vector3 v2(0.1, -0.5, 1.0);
+  Vector3 v3(0.0, 0.0, 0.0);
+
+  // Test that Vee(Hat(v)) == v for various inputs
+  EXPECT(assert_equal(v1, Rot3::Vee(Rot3::Hat(v1))));
+  EXPECT(assert_equal(v2, Rot3::Vee(Rot3::Hat(v2))));
+  EXPECT(assert_equal(v3, Rot3::Vee(Rot3::Hat(v3))));
+
+  // Check the structure of the Lie Algebra element
+  Matrix3 expected;
+  expected << 0, -3, 2,
+    3, 0, -1,
+    -2, 1, 0;
+
+  EXPECT(assert_equal(expected, Rot3::Hat(v1)));
+}
+
+/* ************************************************************************* */
+// Checks correct exponential map (Expmap) with brute force matrix exponential
+TEST(Rot3, BruteForceExpmap) {
+  const Vector3 xi(0.1, 0.2, 0.3);
+  EXPECT(assert_equal(Rot3::Expmap(xi), expm<Rot3>(xi), 1e-6));
 }
 
 /* ************************************************************************* */
@@ -957,9 +1043,48 @@ TEST(Rot3, determinant) {
 }
 
 /* ************************************************************************* */
+TEST(Rot3, ExpmapChainRule) {
+  // Multiply with an arbitrary matrix and exponentiate
+  Matrix3 M;
+  M << 1, 2, 3, 4, 5, 6, 7, 8, 9;
+  auto g = [&](const Vector3& omega) {
+    return Rot3::Expmap(M*omega);
+  };
+
+  // Test the derivatives at zero
+  const Matrix3 expected = numericalDerivative11<Rot3, Vector3>(g, Z_3x1);
+  EXPECT(assert_equal<Matrix3>(expected, M, 1e-5)); // SO3::ExpmapDerivative(Z_3x1) is identity
+
+  // Test the derivatives at another value
+  const Vector3 delta{0.1,0.2,0.3};
+  const Matrix3 expected2 = numericalDerivative11<Rot3, Vector3>(g, delta);
+  EXPECT(assert_equal<Matrix3>(expected2, SO3::ExpmapDerivative(M*delta) * M, 1e-5));
+}
+
+/* ************************************************************************* */
+TEST(Rot3, expmapChainRule) {
+  // Multiply an arbitrary rotation with exp(M*x)
+  // Perhaps counter-intuitively, this has the same derivatives as above
+  Matrix3 M;
+  M << 1, 2, 3, 4, 5, 6, 7, 8, 9;
+  const Rot3 R = Rot3::Expmap({1, 2, 3});
+  auto g = [&](const Vector3& omega) {
+    return R.expmap(M*omega);
+  };
+
+  // Test the derivatives at zero
+  const Matrix3 expected = numericalDerivative11<Rot3, Vector3>(g, Z_3x1);
+  EXPECT(assert_equal<Matrix3>(expected, M, 1e-5));
+
+  // Test the derivatives at another value
+  const Vector3 delta{0.1,0.2,0.3};
+  const Matrix3 expected2 = numericalDerivative11<Rot3, Vector3>(g, delta);
+  EXPECT(assert_equal<Matrix3>(expected2, SO3::ExpmapDerivative(M*delta) * M, 1e-5));
+}
+
+/* ************************************************************************* */
 int main() {
   TestResult tr;
   return TestRegistry::runAllTests(tr);
 }
 /* ************************************************************************* */
-

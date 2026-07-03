@@ -15,10 +15,12 @@
  **/
 #pragma once
 
-#include <ostream>
-
+#include <gtsam/base/MatrixConstants.h>
 #include <gtsam/geometry/Pose3.h>
+#include <gtsam/nonlinear/NoiseModelFactorN.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
+
+#include <ostream>
 
 namespace gtsam {
 
@@ -94,7 +96,7 @@ namespace gtsam {
 
   private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
     /** Serialization function */
     friend class boost::serialization::access;
     template<class ARCHIVE>

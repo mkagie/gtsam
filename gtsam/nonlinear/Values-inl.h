@@ -24,10 +24,9 @@
 
 #pragma once
 
+#include <cassert>
 #include <utility>
 #include <gtsam/nonlinear/Values.h>
-
-#include <gtsam/nonlinear/Values.h> // Only so Eclipse finds class definition
 
 namespace gtsam {
 
@@ -197,11 +196,68 @@ namespace gtsam {
      }
    };
 
+// Added this section for compile gtsam python on windows.
+// msvc don't deduct the template arguments correctly, due possible bug in msvc.
+#ifdef _WIN32
+#if _MSC_VER < 1937
+   // Handle dynamic matrices
+   template <int M, int N>
+   struct handle_matrix<Eigen::Matrix<double, M, N, 0, M, N>, true> {
+     inline Eigen::Matrix<double, M, N> operator()(Key j, const Value* const pointer) {
+       auto ptr = dynamic_cast<const GenericValue<Eigen::Matrix<double, M, N>>*>(pointer);
+       if (ptr) {
+         // value returns a const Matrix&, and the return makes a copy !!!!!
+         return ptr->value();
+       } else {
+         // If a fixed matrix was stored, we end up here as well.
+         throw ValuesIncorrectType(j, typeid(*pointer), typeid(Eigen::Matrix<double, M, N>));
+       }
+     }
+   };
+
+   // Handle fixed matrices
+   template <int M, int N>
+   struct handle_matrix<Eigen::Matrix<double, M, N, 0, M, N>, false> {
+     inline Eigen::Matrix<double, M, N> operator()(Key j, const Value* const pointer) {
+       auto ptr = dynamic_cast<const GenericValue<Eigen::Matrix<double, M, N>>*>(pointer);
+       if (ptr) {
+         // value returns a const MatrixMN&, and the return makes a copy !!!!!
+         return ptr->value();
+       } else {
+         Matrix A;
+         // Check if a dynamic matrix was stored
+         auto ptr = dynamic_cast<const GenericValue<Eigen::MatrixXd>*>(pointer);
+         if (ptr) {
+           A = ptr->value();
+         } else {
+           // Or a dynamic vector
+           A = handle_matrix<Eigen::VectorXd, true>()(j, pointer);  // will throw if not....
+         }
+         // Yes: check size, and throw if not a match
+         if (A.rows() != M || A.cols() != N)
+           throw NoMatchFoundForFixed(M, N, A.rows(), A.cols());
+         else
+           return A; // copy but not malloc
+       }
+     }
+   };
+
+   // Handle matrices
+   template <int M, int N>
+   struct handle<Eigen::Matrix<double, M, N, 0, M, N>> {
+     Eigen::Matrix<double, M, N> operator()(Key j, const Value* const pointer) {
+       return handle_matrix<Eigen::Matrix<double, M, N, 0, M, N>,
+                            (M == Eigen::Dynamic || N == Eigen::Dynamic)>()(j, pointer);
+     }
+   };
+#endif // #if _MSC_VER < 1937
+#endif // #ifdef _WIN32
+
    }  // internal
 
    /* ************************************************************************* */
-   template <typename ValueType>
-   const ValueType Values::at(Key j) const {
+  template <typename ValueType>
+  const ValueType Values::at(Key j) const {
      // Find the item
      KeyValueMap::const_iterator item = values_.find(j);
 
@@ -211,7 +267,28 @@ namespace gtsam {
      // Check the type and throw exception if incorrect
      // h() split in two lines to avoid internal compiler error (MSVC2017)
      auto h = internal::handle<ValueType>();
-     return h(j, item->second.get());
+    return h(j, item->second.get());
+  }
+
+  /* ************************************************************************* */
+  template <typename ValueType>
+  const ValueType& Values::atRef(Key j) const {
+    // Find the item
+    KeyValueMap::const_iterator item = values_.find(j);
+
+    // Throw exception if it does not exist
+    if (item == values_.end()) throw ValuesKeyDoesNotExist("atRef", j);
+
+    const Value* value = item->second.get();
+#ifndef NDEBUG
+    auto ptr = dynamic_cast<const GenericValue<ValueType>*>(value);
+    assert(ptr && "Values::atRef: incorrect ValueType");
+    if (!ptr) throw ValuesIncorrectType(j, typeid(*value), typeid(ValueType));
+    return ptr->value();
+#else
+    auto ptr = static_cast<const GenericValue<ValueType>*>(value);
+    return ptr->value();
+#endif
   }
 
   /* ************************************************************************* */

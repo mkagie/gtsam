@@ -1,8 +1,17 @@
 #pragma once
 
-#include <string>
+#include <gtsam/dllexport.h>
+
 #include <iostream>
+#include <random>
 #include <sstream>
+#include <string>
+
+/**
+ * @brief Global default pseudo-random number generator object.
+ * In wrappers we can access std::mt19937_64 via gtsam.MT19937
+ */
+static std::mt19937_64 kRandomNumberGenerator(42);
 
 namespace gtsam {
 /**
@@ -11,7 +20,7 @@ namespace gtsam {
  * of an object when it prints to cout.
  * https://stackoverflow.com/questions/5419356/redirect-stdout-stderr-to-a-string
  */
-struct RedirectCout {
+struct GTSAM_EXPORT RedirectCout {
   /// constructor -- redirect stdout buffer to a stringstream buffer
   RedirectCout() : ssBuffer_(), coutBuffer_(std::cout.rdbuf(ssBuffer_.rdbuf())) {}
 
@@ -26,7 +35,7 @@ private:
   std::streambuf* coutBuffer_;
 };
 
-}
+}  // namespace gtsam
 
 namespace gtsam {
 // Adapted from https://stackoverflow.com/a/32223343/9151520

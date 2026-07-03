@@ -16,14 +16,16 @@
  * @author Carlos Nieto
  **/
 
+#include <CppUnitLite/TestHarness.h>
 #include <gtsam/base/Matrix.h>
+#include <gtsam/base/MatrixConstants.h>
 #include <gtsam/base/VectorSpace.h>
 #include <gtsam/base/testLie.h>
-#include <CppUnitLite/TestHarness.h>
+
+#include <Eigen/QR>
+#include <functional>
 #include <iostream>
 #include <sstream>
-#include <optional>
-#include <functional>
 
 using namespace std;
 using namespace gtsam;
@@ -190,44 +192,6 @@ TEST(Matrix, stack )
   matrices.push_back(B);
   Matrix AB2 = gtsam::stack(matrices);
   EQUALITY(C,AB2);
-}
-
-/* ************************************************************************* */
-TEST(Matrix, column )
-{
-  Matrix A = (Matrix(4, 7) << -1., 0., 1., 0., 0., 0., -0.2, 0., -1., 0., 1.,
-      0., 0., 0.3, 1., 0., 0., 0., -1., 0., 0.2, 0., 1., 0., 0., 0., -1.,
-      -0.1).finished();
-  Vector a1 = column(A, 0);
-  Vector exp1 = (Vector(4) << -1., 0., 1., 0.).finished();
-  EXPECT(assert_equal(a1, exp1));
-
-  Vector a2 = column(A, 3);
-  Vector exp2 = (Vector(4) << 0., 1., 0., 0.).finished();
-  EXPECT(assert_equal(a2, exp2));
-
-  Vector a3 = column(A, 6);
-  Vector exp3 = (Vector(4) << -0.2, 0.3, 0.2, -0.1).finished();
-  EXPECT(assert_equal(a3, exp3));
-}
-
-/* ************************************************************************* */
-TEST(Matrix, row )
-{
-  Matrix A = (Matrix(4, 7) << -1., 0., 1., 0., 0., 0., -0.2, 0., -1., 0., 1.,
-      0., 0., 0.3, 1., 0., 0., 0., -1., 0., 0.2, 0., 1., 0., 0., 0., -1.,
-      -0.1).finished();
-  Vector a1 = row(A, 0);
-  Vector exp1 = (Vector(7) << -1., 0., 1., 0., 0., 0., -0.2).finished();
-  EXPECT(assert_equal(a1, exp1));
-
-  Vector a2 = row(A, 2);
-  Vector exp2 = (Vector(7) << 1., 0., 0., 0., -1., 0., 0.2).finished();
-  EXPECT(assert_equal(a2, exp2));
-
-  Vector a3 = row(A, 3);
-  Vector exp3 = (Vector(7) << 0., 1., 0., 0., 0., -1., -0.1).finished();
-  EXPECT(assert_equal(a3, exp3));
 }
 
 /* ************************************************************************* */
@@ -567,7 +531,7 @@ TEST(Matrix, matrix_vector_multiplication )
   Vector AtAv = Vector3(142., 188., 234.);
 
   EQUALITY(A*v,Av);
-  EQUALITY(A^Av,AtAv);
+  EQUALITY(A.transpose() * Av,AtAv);
 }
 
 /* ************************************************************************* */
@@ -594,61 +558,6 @@ TEST(Matrix, scalar_divide )
   B(1, 1) = 4;
 
   EQUALITY(B,A/10);
-}
-
-/* ************************************************************************* */
-TEST(Matrix, zero_below_diagonal ) {
-  Matrix A1 = (Matrix(3, 4) <<
-      1.0, 2.0, 3.0, 4.0,
-      1.0, 2.0, 3.0, 4.0,
-      1.0, 2.0, 3.0, 4.0).finished();
-
-  Matrix expected1 = (Matrix(3, 4) <<
-      1.0, 2.0, 3.0, 4.0,
-      0.0, 2.0, 3.0, 4.0,
-      0.0, 0.0, 3.0, 4.0).finished();
-  Matrix actual1r = A1;
-  zeroBelowDiagonal(actual1r);
-  EXPECT(assert_equal(expected1, actual1r, 1e-10));
-
-  Matrix actual1c = A1;
-  zeroBelowDiagonal(actual1c);
-  EXPECT(assert_equal(Matrix(expected1), actual1c, 1e-10));
-
-  actual1c = A1;
-  zeroBelowDiagonal(actual1c, 4);
-  EXPECT(assert_equal(Matrix(expected1), actual1c, 1e-10));
-
-  Matrix A2 = (Matrix(5, 3) <<
-        1.0, 2.0, 3.0,
-        1.0, 2.0, 3.0,
-        1.0, 2.0, 3.0,
-        1.0, 2.0, 3.0,
-        1.0, 2.0, 3.0).finished();
-  Matrix expected2 = (Matrix(5, 3) <<
-      1.0, 2.0, 3.0,
-      0.0, 2.0, 3.0,
-      0.0, 0.0, 3.0,
-      0.0, 0.0, 0.0,
-      0.0, 0.0, 0.0).finished();
-
-  Matrix actual2r = A2;
-  zeroBelowDiagonal(actual2r);
-  EXPECT(assert_equal(expected2, actual2r, 1e-10));
-
-  Matrix actual2c = A2;
-  zeroBelowDiagonal(actual2c);
-  EXPECT(assert_equal(Matrix(expected2), actual2c, 1e-10));
-
-  Matrix expected2_partial = (Matrix(5, 3) <<
-        1.0, 2.0, 3.0,
-        0.0, 2.0, 3.0,
-        0.0, 2.0, 3.0,
-        0.0, 2.0, 3.0,
-        0.0, 2.0, 3.0).finished();
-  actual2c = A2;
-  zeroBelowDiagonal(actual2c, 1);
-  EXPECT(assert_equal(Matrix(expected2_partial), actual2c, 1e-10));
 }
 
 /* ************************************************************************* */
@@ -825,7 +734,7 @@ TEST(Matrix, eigen_QR )
       10, 0, 0,  0,-10,0,   2,
       00, 10,0, 0, 0, -10, -1).finished());
   Matrix actual = A.householderQr().matrixQR();
-  zeroBelowDiagonal(actual);
+  actual.triangularView<Eigen::StrictlyLower>().setZero();
 
   EXPECT(assert_equal(expected, actual, 1e-3));
 
@@ -861,18 +770,6 @@ TEST(Matrix, qr )
   EXPECT(assert_equal(expectedQ, Q, 1e-4));
   EXPECT(assert_equal(expectedR, R, 1e-4));
   EXPECT(assert_equal(A, Q*R, 1e-14));
-}
-
-/* ************************************************************************* */
-TEST(Matrix, sub )
-{
-  Matrix A = (Matrix(4, 6) << -5, 0, 5, 0, 0, 0, 00, -5, 0, 5, 0, 0, 10, 0, 0, 0, -10,
-      0, 00, 10, 0, 0, 0, -10).finished();
-  Matrix actual = sub(A, 1, 3, 1, 5);
-
-  Matrix expected = (Matrix(2, 4) << -5, 0, 5, 0, 00, 0, 0, -10).finished();
-
-  EQUALITY(actual,expected);
 }
 
 /* ************************************************************************* */
@@ -1077,7 +974,7 @@ TEST(Matrix, svd3 )
   Matrix t = U * S;
   Matrix Vt = trans(V);
 
-  EXPECT(assert_equal(sampleAt, prod(t, Vt)));
+  EXPECT(assert_equal(sampleAt, t * Vt));
   EXPECT(assert_equal(expectedU,U));
   EXPECT(assert_equal(expected_s,s,1e-9));
   EXPECT(assert_equal(expectedV,V));
@@ -1151,7 +1048,7 @@ TEST(Matrix, Matrix24IsVectorSpace) {
 }
 
 TEST(Matrix, RowMajorIsVectorSpace) {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   typedef Eigen::Matrix<double, 2, 3, Eigen::RowMajor> RowMajor;
   GTSAM_CONCEPT_ASSERT(IsVectorSpace<RowMajor>);
 #endif
@@ -1166,7 +1063,7 @@ TEST(Matrix, VectorIsVectorSpace) {
 }
 
 TEST(Matrix, RowVectorIsVectorSpace) {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   typedef Eigen::Matrix<double, 1, -1> RowVector;
   GTSAM_CONCEPT_ASSERT(IsVectorSpace<RowVector>);
   GTSAM_CONCEPT_ASSERT(IsVectorSpace<Vector5>);

@@ -8,7 +8,10 @@
 
 #include <gtsam/base/numericalDerivative.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
+#include <gtsam/nonlinear/NoiseModelFactorN.h>
 #include <gtsam_unstable/dynamics/PoseRTV.h>
+
+#include <cassert>
 
 namespace gtsam {
 

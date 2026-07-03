@@ -20,6 +20,7 @@
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/navigation/NavState.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
+#include <gtsam/nonlinear/NoiseModelFactorN.h>
 
 namespace gtsam {
 
@@ -91,13 +92,13 @@ class GTSAM_EXPORT BarometricFactor : public NoiseModelFactorN<Pose3, double> {
                -0.00649;
     }
 
-    inline double baroOut(const double& meters) {
+    inline double baroOut(const double& meters) const {
         double temp = 15.04 - 0.00649 * meters;
         return 101.29 * std::pow(((temp + 273.1) / 288.08), 5.256);
     }
 
    private:
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION    ///
+#if GTSAM_ENABLE_BOOST_SERIALIZATION    ///
     /// Serialization function
     friend class boost::serialization::access;
     template <class ARCHIVE>

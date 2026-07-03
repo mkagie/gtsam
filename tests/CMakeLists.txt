@@ -8,11 +8,10 @@ if (${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang") # might not be best test - Richar
 endif()
 
 if (NOT GTSAM_USE_BOOST_FEATURES)
-	list(APPEND excluded_tests "testGncOptimizer.cpp")
 	list(APPEND excluded_tests "testGraph.cpp")
 endif()
 
-if (NOT GTSAM_ENABLE_BOOST_SERIALIZATION)
+if (NOT GTSAM_ENABLE_BOOST_SERIALIZATION OR GTSAM_SINGLE_TEST_EXE)
 	list(APPEND excluded_tests "testSerializationSlam.cpp")
 endif()
 

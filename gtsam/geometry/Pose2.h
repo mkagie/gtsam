@@ -36,13 +36,16 @@ namespace gtsam {
  * @ingroup geometry
  * \nosubgrouping
  */
-class GTSAM_EXPORT Pose2: public LieGroup<Pose2, 3> {
+class GTSAM_EXPORT Pose2: public MatrixLieGroup<Pose2, 3, 3> {
 
 public:
 
-  /** Pose Concept requirements */
-  typedef Rot2 Rotation;
-  typedef Point2 Translation;
+  /// Pose Concept requirements
+  using Rotation = Rot2;
+  using Translation = Point2;
+
+  /// LieGroup Concept requirements
+  using LieAlgebra = Matrix3;
 
 private:
 
@@ -60,7 +63,10 @@ public:
   }
 
   /** copy constructor */
-  Pose2(const Pose2& pose) : r_(pose.r_), t_(pose.t_) {}
+  Pose2(const Pose2& pose) = default;
+  //  : r_(pose.r_), t_(pose.t_) {}
+
+  Pose2& operator=(const Pose2& other) = default;
 
   /**
    * construct from (x,y,theta)
@@ -81,9 +87,13 @@ public:
   Pose2(const Rot2& r, const Point2& t) : r_(r), t_(t) {}
 
   /** Constructor from 3*3 matrix */
-  Pose2(const Matrix &T) :
-    r_(Rot2::atan2(T(1, 0), T(0, 0))), t_(T(0, 2), T(1, 2)) {
-    assert(T.rows() == 3 && T.cols() == 3);
+  Pose2(const Matrix &T)
+      : r_(Rot2::atan2(T(1, 0), T(0, 0))), t_(T(0, 2), T(1, 2)) {
+#ifndef NDEBUG
+    if (T.rows() != 3 || T.cols() != 3) {
+      throw;
+    }
+#endif
   }
 
   /// @}
@@ -105,7 +115,7 @@ public:
   static std::optional<Pose2> Align(const Point2Pairs& abPointPairs);
 
   // Version of Pose2::Align that takes 2 matrices.
-  static std::optional<Pose2> Align(const Matrix& a, const Matrix& b);
+  static std::optional<Pose2> Align(ConstMatrixView a, ConstMatrixView b);
 
   /// @}
   /// @name Testable
@@ -148,48 +158,14 @@ public:
    */
   Matrix3 AdjointMap() const;
 
-  /// Apply AdjointMap to twist xi
-  inline Vector3 Adjoint(const Vector3& xi) const {
-    return AdjointMap()*xi;
-  }
-
   /**
    * Compute the [ad(w,v)] operator for SE2 as in [Kobilarov09siggraph], pg 19
    */
   static Matrix3 adjointMap(const Vector3& v);
 
-  /**
-   * Action of the adjointMap on a Lie-algebra vector y, with optional derivatives
-   */
-  static Vector3 adjoint(const Vector3& xi, const Vector3& y) {
-    return adjointMap(xi) * y;
-  }
-
-  /**
-   * The dual version of adjoint action, acting on the dual space of the Lie-algebra vector space.
-   */
-  static Vector3 adjointTranspose(const Vector3& xi, const Vector3& y) {
-    return adjointMap(xi).transpose() * y;
-  }
-
   // temporary fix for wrappers until case issue is resolved
   static Matrix3 adjointMap_(const Vector3 &xi) { return adjointMap(xi);}
   static Vector3 adjoint_(const Vector3 &xi, const Vector3 &y) { return adjoint(xi, y);}
-
-  /**
-   * wedge for SE(2):
-   * @param xi 3-dim twist (v,omega) where
-   *  omega is angular velocity
-   *  v (vx,vy) = 2D velocity
-   * @return xihat, 3*3 element of Lie algebra that can be exponentiated
-   */
-  static inline Matrix3 wedge(double vx, double vy, double w) {
-    Matrix3 m;
-    m << 0.,-w,  vx,
-         w,  0., vy,
-         0., 0.,  0.;
-    return m;
-  }
 
   /// Derivative of Expmap
   static Matrix3 ExpmapDerivative(const Vector3& v);
@@ -205,6 +181,12 @@ public:
 
   using LieGroup<Pose2, 3>::inverse; // version with derivative
 
+  /// Hat maps from tangent vector to Lie algebra
+  static Matrix3 Hat(const Vector3& xi);
+
+  /// Vee maps from Lie algebra to tangent vector
+  static Vector3 Vee(const Matrix3& X);
+
   /// @}
   /// @name Group Action on Point2
   /// @{
@@ -219,7 +201,7 @@ public:
    * @param points 2*N matrix in world coordinates
    * @return points in Pose coordinates, as 2*N Matrix
    */
-  Matrix transformTo(const Matrix& points) const;
+  Matrix transformTo(ConstMatrixView points) const;
 
   /** Return point coordinates in global frame */
   Point2 transformFrom(const Point2& point,
@@ -231,7 +213,7 @@ public:
    * @param points 2*N matrix in Pose coordinates
    * @return points in world coordinates, as 2*N Matrix
    */
-  Matrix transformFrom(const Matrix& points) const;
+  Matrix transformFrom(ConstMatrixView points) const;
 
   /** syntactic sugar for transformFrom */
   inline Point2 operator*(const Point2& point) const { 
@@ -272,8 +254,11 @@ public:
     return r_;
   }
 
-  //// return transformation matrix
+  /// return transformation matrix
   Matrix3 matrix() const;
+
+  /// Vectorize the rotation matrix into a 9D vector.
+  Vector9 vec(OptionalJacobian<9, 3> H = {}) const;
 
   /**
    * Calculate bearing to a landmark
@@ -327,15 +312,27 @@ public:
    */
   static std::pair<size_t, size_t> rotationInterval() { return {2, 2}; }
 
+  
+
   /// Output stream operator
   GTSAM_EXPORT
   friend std::ostream &operator<<(std::ostream &os, const Pose2& p);
 
   /// @}
+  /// @name deprecated
+  /// @{
+
+#ifdef GTSAM_ALLOW_DEPRECATED_SINCE_V43
+  /// @deprecated: use Hat
+  static inline Matrix3 wedge(double vx, double vy, double w) {
+    return Hat(TangentVector(vx, vy, w));
+  }
+#endif
+  /// @}
 
  private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION  //
+#if GTSAM_ENABLE_BOOST_SERIALIZATION  //
   // Serialization function
   friend class boost::serialization::access;
   template<class Archive>
@@ -344,28 +341,26 @@ public:
     ar & BOOST_SERIALIZATION_NVP(r_);
   }
 #endif
-
-public:
-  // Align for Point2, which is either derived from, or is typedef, of Vector2
-  GTSAM_MAKE_ALIGNED_OPERATOR_NEW
 }; // Pose2
 
-/** specialization for pose2 wedge function (generic template in Lie.h) */
+#ifdef GTSAM_ALLOW_DEPRECATED_SINCE_V43
+/// @deprecated: use T::Hat
 template <>
 inline Matrix wedge<Pose2>(const Vector& xi) {
   // NOTE(chris): Need eval() as workaround for Apple clang + avx2.
-  return Matrix(Pose2::wedge(xi(0),xi(1),xi(2))).eval();
+  return Matrix(Pose2::Hat(xi)).eval();
 }
+#endif
 
 // Convenience typedef
 using Pose2Pair = std::pair<Pose2, Pose2>;
 using Pose2Pairs = std::vector<Pose2Pair>;
 
 template <>
-struct traits<Pose2> : public internal::LieGroup<Pose2> {};
+struct traits<Pose2> : public internal::MatrixLieGroup<Pose2, 3> {};
 
 template <>
-struct traits<const Pose2> : public internal::LieGroup<Pose2> {};
+struct traits<const Pose2> : public internal::MatrixLieGroup<Pose2, 3> {};
 
 // bearing and range traits, used in RangeFactor
 template <typename T>
@@ -375,4 +370,3 @@ template <typename T>
 struct Range<Pose2, T> : HasRange<Pose2, T, double> {};
 
 } // namespace gtsam
-

@@ -15,11 +15,11 @@
  * @author Frank Dellaert
  **/
 
+#include <CppUnitLite/TestHarness.h>
 #include <gtsam/base/Vector.h>
+#include <gtsam/base/VectorConstants.h>
 #include <gtsam/base/VectorSpace.h>
 #include <gtsam/base/testLie.h>
-#include <CppUnitLite/TestHarness.h>
-#include <iostream>
 
 using namespace std;
 using namespace gtsam;
@@ -272,7 +272,7 @@ TEST(Vector, VectorIsVectorSpace) {
 }
 
 TEST(Vector, RowVectorIsVectorSpace) {
-#ifdef GTSAM_USE_BOOST_FEATURES
+#if GTSAM_USE_BOOST_FEATURES
   typedef Eigen::Matrix<double,1,-1> RowVector;
   GTSAM_CONCEPT_ASSERT(IsVectorSpace<RowVector>);
 #endif

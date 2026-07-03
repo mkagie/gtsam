@@ -20,6 +20,7 @@
 #include <gtsam/base/Testable.h>
 #include <gtsam/base/Lie.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
+#include <gtsam/nonlinear/NoiseModelFactorN.h>
 
 #ifdef _WIN32
 #define BETWEENFACTOR_VISIBILITY
@@ -71,7 +72,8 @@ namespace gtsam {
     /** Constructor */
     BetweenFactor(Key key1, Key key2, const VALUE& measured,
         const SharedNoiseModel& model = nullptr) :
-      Base(model, key1, key2), measured_(measured) {
+      Base(noiseModel::validOrDefault(measured, model), key1, key2),
+      measured_(measured) {
     }
 
     /// @}
@@ -135,7 +137,7 @@ namespace gtsam {
 
   private:
 
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
     /** Serialization function */
     friend class boost::serialization::access;
     template<class ARCHIVE>
@@ -146,11 +148,6 @@ namespace gtsam {
       ar & BOOST_SERIALIZATION_NVP(measured_);
     }
 #endif
-
-	  // Alignment, see https://eigen.tuxfamily.org/dox/group__TopicStructHavingEigenMembers.html
-	  enum { NeedsToAlign = (sizeof(VALUE) % 16) == 0 };
-    public:
-      GTSAM_MAKE_ALIGNED_OPERATOR_NEW_IF(NeedsToAlign)
   }; // \class BetweenFactor
 
   /// traits
@@ -176,7 +173,7 @@ namespace gtsam {
   private:
 
     /** Serialization function */
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
     friend class boost::serialization::access;
     template<class ARCHIVE>
     void serialize(ARCHIVE & ar, const unsigned int /*version*/) {

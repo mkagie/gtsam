@@ -19,9 +19,11 @@
  * @author  Varun Agrawal
  */
 
+#include <gtsam/base/MatrixConstants.h>
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/SO3.h>
 
+#include <cassert>
 #include <cmath>
 #include <random>
 
@@ -120,7 +122,7 @@ Unit3 Rot3::unrotate(const Unit3& p,
     OptionalJacobian<2,3> HR, OptionalJacobian<2,2> Hp) const {
   Matrix32 Dp;
   Unit3 q = Unit3(unrotate(p.point3(Dp)));
-  if (Hp) *Hp = q.basis().transpose() * matrix().transpose () * Dp;
+  if (Hp) *Hp = q.basis().transpose() * matrix().transpose() * Dp;
   if (HR) *HR = q.basis().transpose() * q.skew();
   return q;
 }
@@ -145,6 +147,7 @@ Point3 Rot3::unrotate(const Point3& p, OptionalJacobian<3,3> H1,
 }
 
 /* ************************************************************************* */
+#ifdef GTSAM_ALLOW_DEPRECATED_SINCE_V43
 Point3 Rot3::column(int index) const{
   if(index == 3)
     return r3();
@@ -155,6 +158,7 @@ Point3 Rot3::column(int index) const{
   else
     throw invalid_argument("Argument to Rot3::column must be 1, 2, or 3");
 }
+#endif
 
 /* ************************************************************************* */
 Vector3 Rot3::xyz(OptionalJacobian<3, 3> H) const {
@@ -316,4 +320,3 @@ Rot3 Rot3::slerp(double t, const Rot3& other) const {
 /* ************************************************************************* */
 
 } // namespace gtsam
-

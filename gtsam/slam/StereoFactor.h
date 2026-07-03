@@ -18,9 +18,12 @@
 
 #pragma once
 
-#include <optional>
-#include <gtsam/nonlinear/NonlinearFactor.h>
+#include <gtsam/base/MatrixConstants.h>
 #include <gtsam/geometry/StereoCamera.h>
+#include <gtsam/nonlinear/NoiseModelFactorN.h>
+#include <gtsam/nonlinear/NonlinearFactor.h>
+
+#include <optional>
 
 namespace gtsam {
 
@@ -169,8 +172,13 @@ public:
   /** return flag for throwing cheirality exceptions */
   inline bool throwCheirality() const { return throwCheirality_; }
 
+  /** return the (optional) sensor pose with respect to the vehicle frame */
+  const std::optional<POSE>& body_P_sensor() const {
+    return body_P_sensor_;
+  }
+
 private:
-#ifdef GTSAM_ENABLE_BOOST_SERIALIZATION
+#if GTSAM_ENABLE_BOOST_SERIALIZATION
   /** Serialization function */
   friend class boost::serialization::access;
   template<class Archive>
